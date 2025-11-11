@@ -1,4 +1,4 @@
-name: Analyze
+name: Build
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Analyze
+    name: Build and analyze
     runs-on: ubuntu-latest
     
     steps:
