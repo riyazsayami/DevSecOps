@@ -1,0 +1,35 @@
+name: "Check Key access to Server"
+
+on:
+  push:
+      branches:
+        - main
+
+jobs:
+  check-keys:
+    runs-on: ubuntu-latest
+    env:
+      SERVER_IP: ${{ vars.SERVER_IP }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Configure SSH"
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      
+      - name: "Put SSH Key in Docker file for Server Access"
+        run: |
+          touch mykey.pem
+          echo $SSH_KEY64 | base64 -d > mykey.pem && chmod 400 mykey.pem
+          ssh-keygen -R $SERVER_IP
+        env: 
+          SSH_KEY64: ${{ secrets.SSH_KEY64 }}
+
+      - name: "Check Number of Lines in authorized_keys file"
+        run: |
+          ssh -t ubuntu@$SERVER_IP -i mykey.pem "wc -l /home/ubuntu/.ssh/authorized_keys | awk '{print $1}' | grep 1"
