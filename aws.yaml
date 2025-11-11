@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Insecure CloudFormation YAML for SonarQube testing
+
+Parameters:
+  DBPassword:
+    Type: String
+    Default: DefaultP@ssw0rd
+
+Resources:
+  PublicBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: insecure-public-bucket-example
+      AccessControl: PublicRead
+    DeletionPolicy: Delete
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PublicBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::${PublicBucket}/*
+
+  OpenRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: InsecureFullAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AdminPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  OpenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open to world
+      VpcId: vpc-123456
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  OpenDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: insecure-rds
+      AllocatedStorage: '20'
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      PubliclyAccessible: true
+      StorageEncrypted: false
+
+  InsecureVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 8
+      AvailabilityZone: us-east-1a
+      Encrypted: false
+      Tags:
+        - Key: Name
+          Value: insecure-volume
+
+  InsecureInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0abcdef1234567890
+      SecurityGroupIds:
+        - !Ref OpenSecurityGroup
+      KeyName: insecure-keypair
+      IamInstanceProfile: !Ref OpenRole
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          echo 'DB_PASSWORD=${DBPassword}' >> /etc/myapp/secrets.conf
+          echo 'API_KEY=12345-ABCDE-SECRET' >> /etc/myapp/secrets.conf
+          aws s3 cp s3://some-bucket/somefile /tmp/somefile --no-verify-ssl
+
+Outputs:
+  PublicBucketName:
+    Value: !Ref PublicBucket
